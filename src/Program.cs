@@ -1,80 +1,54 @@
 ﻿using System.Numerics;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
 using TextCopy;
+using PupaPasswordGenerator.Generations;
+using static PupaPasswordGenerator.Utils.Utils;
 
 namespace PupaPasswordGenerator {
 
+   #region BOOT
    internal static class Program {
-      #region BOOT
       private static async Task Main(string[] args) {
          Console.WriteLine("Генератор паролей :)");
-         await Task.Delay(1000);
+         await Task.Delay(TimeSpan.FromSeconds(1));
          var version = await InputStr("Версия");
+         Console.WriteLine("Экспорт из фалйа? [Y/Any]");
+         if(Console.ReadKey(true).Key == ConsoleKey.Y) {
+            while(true) {
+               var strings = await File.ReadAllLinesAsync($"{AppDomain.CurrentDomain.BaseDirectory}Input.txt");
+               var birthday = string.Join('.', (await InputStr("День рождение (День Mесяц Год)")).Split(' '));
+               var sb = new StringBuilder();
+               for(var i = 0; i < strings.Length; i += 3) {
+                  var code = strings[i];
+                  var length = int.Parse(strings[i + 1]);
+                  var time = DateTime.Now;
+                  var password = GeneratorManager.GetGeneratorFromModel(strings[i + 2]).Item2.Invoke(version, length, code, birthday, time);
+                  sb.AppendLine($"Version: {version}\nCode: {code}\nPassword: {password}\nLength: {length}\nTime: {time.Year} {time.Month} {time.Day} {time.Hour}\nModel: {strings[i + 2]}\n");
+               }
+               await File.WriteAllTextAsync($"{AppDomain.CurrentDomain.BaseDirectory}Output.txt", sb.ToString());
+            }
+         }
+      start:
+         var model = await InputStr($"Модель генератора [{string.Join(',', GeneratorManager.GetNames())}]");
+         if(GeneratorManager.IsExitis(model) == false) {
+            goto start;
+         }
+         var generator = GeneratorManager.GetGeneratorFromModel(model);
          while(true) {
+            Console.WriteLine("Создание пороля");
             var length = await InputInt("Длинна пароля (20-120)", new(20, 120));
             var code = await InputStr("Секретный код");
             var birthday = string.Join('.', (await InputStr("День рождение (День Mесяц Год)")).Split(' '));
             var time = DateTime.Now;
-            var result = PasswordGeneration(version, length, code, birthday, time);
+            var result = generator.Item2.Invoke(version, length, code, birthday, time);
             Console.WriteLine($"Пароль: {result}");
             Console.WriteLine($"Дата создания: {time.Year} {time.Month} {time.Day} {time.Hour}");
             Console.WriteLine($"Необходимые данный скопированны в буфер обмена.");
-            await ClipboardService.SetTextAsync($"Password: {result}\nLength: {length}\nTime: {time.Year} {time.Month} {time.Day} {time.Hour}\nVersion: {version}");
+            await ClipboardService.SetTextAsync($"Password: {result}\nLength: {length}\nTime: {time.Year} {time.Month} {time.Day} {time.Hour}\nVersion: {version}\nModel: {model}");
          }
       }
-      #endregion
-      #region GENERATORS
-      private static string PasswordGeneration(string version, int length, string code, string birthday, DateTime time) {
-         var request = $"{string.Join(' ', Encoding.UTF8.GetBytes(version).Select(x => x.ToString()))} {code} {birthday} {length} {time.Year} {time.Month} {time.Day} {time.Hour}";
-         var hash = ComputeSha512Hash(request);
-         var rnd = new Random(length);
-         var sb = new StringBuilder();
-         for(var i = 0; i < hash.Length; i++) {
-            var symbol = hash[i].ToString();
-            sb.Append(rnd.Next(int.MinValue, int.MaxValue) % 10 == 0 ? symbol.ToUpper() : symbol);
-         }
-         return sb.ToString()[0..length];
-      }
-      #endregion
-      #region UTILS
-      private static Task<string> InputStr(string prompt) {
-         while(true) {
-            Console.Out.Write($"{prompt} >> ");
-            var res = Console.ReadLine();
-            if(string.IsNullOrWhiteSpace(res)) {
-               FailMessage($"Строка пустая");
-               continue;
-            }
-            return Task.FromResult(res);
-         }
-      }
-      private static void FailMessage(string message) {
-         Console.ForegroundColor = ConsoleColor.Red;
-         Console.Out.WriteLine(message);
-         Console.ResetColor();
-      }
-      private static async Task<int> InputInt(string prompt, Vector2 range) {
-         while(true) {
-            var str = await InputStr(prompt);
-            if(int.TryParse(str, out var res) == false) {
-               FailMessage($"Это не Int32");
-               continue;
-            }
-            if(range.X > res || range.Y < res) {
-               FailMessage($"от {range.X} до {range.Y} ваш {res}");
-               continue;
-            }
-            return res;
-         }
-      }
-      private static string ComputeSha512Hash(string rawData) {
-         IEnumerable<byte> bytes = SHA512.HashData(Encoding.UTF8.GetBytes(rawData));
-         var builder = new StringBuilder();
-         builder.AppendJoin(string.Empty, bytes.Select(x => x.ToString("x2")));
-         return builder.ToString();
-      }
-      #endregion
    }
-
+   #endregion
 }
